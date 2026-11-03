@@ -1,7 +1,11 @@
 package kr.hs.gsm.test;
 
-//users 테이블
-public class UserDTO {
+import java.io.Serializable;
+
+//users 테이블 (로그인 세션에 저장되므로 Serializable)
+public class UserDTO implements Serializable {
+	private static final long serialVersionUID = 1L;
+
 	private long id;
 	private String email;
 	private String name;
