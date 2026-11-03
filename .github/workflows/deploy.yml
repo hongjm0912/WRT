@@ -1,0 +1,83 @@
+name: Build & Deploy
+
+# main 에 푸시하면 WAR 를 빌드해서 서버(Tomcat ROOT)에 배포한다. Actions 탭에서 수동 실행도 가능.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 배포가 겹치지 않게 한 번에 하나씩
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Compile
+        run: |
+          LIB=src/main/webapp/WEB-INF/lib
+          OUT=build/war/WEB-INF/classes
+          mkdir -p "$OUT"
+          find src/main/java -name '*.java' > sources.txt
+          javac -encoding UTF-8 -nowarn -cp "$LIB/*" -d "$OUT" @sources.txt
+
+      - name: Package WAR
+        run: |
+          # 컴파일 결과·servlet-api.jar(Tomcat 이 제공)를 뺀 webapp 을 복사
+          rsync -a --exclude 'WEB-INF/classes/' --exclude 'WEB-INF/lib/servlet-api.jar' src/main/webapp/ build/war/
+          jar -cf ROOT.war -C build/war .
+          jar -tf ROOT.war | grep -E 'WEB-INF/(web.xml|lib/|classes/kr/hs/gsm/test/api/ApiServlet.class)'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ROOT-war
+          path: ROOT.war
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ROOT-war
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+
+      - name: Upload WAR
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: scp -i ~/.ssh/deploy_key -P "$PORT" -o BatchMode=yes ROOT.war "$USER@$HOST:/tmp/ROOT.war"
+
+      - name: Deploy (교체 → 재시작 → 헬스체크, 실패 시 롤백)
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          PORT: ${{ secrets.DEPLOY_PORT }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: ssh -i ~/.ssh/deploy_key -p "$PORT" -o BatchMode=yes "$USER@$HOST" 'sudo /usr/local/bin/wrt-deploy /tmp/ROOT.war'
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

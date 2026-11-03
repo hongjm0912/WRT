@@ -17,11 +17,17 @@ public class ProjectDAO {
 	protected PreparedStatement ps;
 	protected ResultSet rs;
 
-	//DB접속
+	//환경변수 값, 없으면 기본값 (로컬 개발용)
+	private static String env(String name, String defaultValue) {
+		String value = System.getenv(name);
+		return (value == null || value.isBlank()) ? defaultValue : value;
+	}
+
+	//DB접속 - 서버에서는 DB_URL / DB_USER / DB_PASSWORD 환경변수로 지정
 	public Connection getConn() {
-		String url = "jdbc:oracle:thin:@127.0.0.1:1521:xe";	//DB접속 주소
-		String user = "system";								//사용자계정
-		String password = "1234";							//비밀번호
+		String url = env("DB_URL", "jdbc:oracle:thin:@127.0.0.1:1521:xe");	//DB접속 주소
+		String user = env("DB_USER", "system");								//사용자계정
+		String password = env("DB_PASSWORD", "1234");						//비밀번호
 		try {
 			Class.forName("oracle.jdbc.OracleDriver");
 			conn = DriverManager.getConnection(url, user, password);
