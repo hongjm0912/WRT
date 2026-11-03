@@ -1,0 +1,14 @@
+# Eclipse build output
+build/
+bin/
+src/main/webapp/WEB-INF/classes/
+
+# Eclipse local metadata
+.metadata/
+*.tmp
+*.bak
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
